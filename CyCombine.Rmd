@@ -1,0 +1,180 @@
+---
+title: "FlowSOM"
+output: html_document
+date: "2024-11-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+if (!requireNamespace("FlowSOM", quietly = TRUE)) {
+  install.packages("FlowSOM")
+}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("flowCore")
+
+# To ensure Rstudio looks up BioConductor packages run:
+setRepositories(ind = c(1:6, 8))
+# Then install package with
+devtools::install_github("biosurf/cyCombine")
+```
+
+```{r}
+library(FlowSOM)
+library(flowCore)
+library("cyCombine")
+library("magrittr")
+library(dplyr)
+```
+
+## Normalización CyCombine
+
+#### Normalización por separado:
+
+```{r}
+# Directory containing .fcs files
+data_dir <- "Gated_no_concat"
+# Markers of interest
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8', 'CCR7', 'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG', 'CD28', 'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14', 'CD11b', 'TCRG/D', 'PDL1', 'CD4', 'CD24', 'CD95', 'CD25', 'CXCR3', 'CD27', 'CD1c', 'CD19', 'CD127', 'HLADR', 'CD38')
+# The list of markers can also be imported from a panel file (See the reference manual for an example)
+
+# Compile fcs files, down-sample, and preprocess
+uncorrected_gated <- prepare_data(data_dir = data_dir,
+                            markers = markers,
+                            metadata = file.path(data_dir, "metadata_cycombine_gated.xlsx"), # Can also be .csv file or data.frame object
+                             sample_ids = NULL,
+                             batch_ids = "Batch",
+                             filename_col = "Filename",
+                             condition = "Set",
+                             down_sample = FALSE,
+                             sample_size = 500000,
+                             seed = 473,
+                             cofactor = 5) 
+#saveRDS(uncorrected, file = "Controles_uncorrected.RDS")
+
+# Run batch correction
+corrected_gated <- uncorrected_gated %>%
+  batch_correct(markers = markers,
+                norm_method = "scale", # "rank" is recommended when combining data with heavy batch effects
+                rlen = 10, # Consider a larger value, if results are not convincing (e.g. 100)
+                covar = "condition")
+#saveRDS(corrected, file = "Controles_corrected.RDS")
+
+write.csv(corrected_gated, "Controles_gated_normalizados/Controles_cycombine_corrected.csv", row.names = FALSE)
+```
+
+```{r}
+# Directory containing .fcs files
+data_dir <- "Muestras_cluster"
+# Markers of interest
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8', 'CCR7', 'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG', 'CD28', 'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14', 'CD11b', 'TCRG/D', 'PDL1', 'CD4', 'CD24', 'CD95', 'CD25', 'CXCR3', 'CD27', 'CD1c', 'CD19', 'CD127', 'HLADR', 'CD38')
+# The list of markers can also be imported from a panel file (See the reference manual for an example)
+
+# Compile fcs files, down-sample, and preprocess
+uncorrected_muestras <- prepare_data(data_dir = data_dir,
+                            markers = markers,
+                            metadata = file.path(data_dir, "metadata_cycombine_muestras.xlsx"), # Can also be .csv file or data.frame object
+                             sample_ids = NULL,
+                             batch_ids = "Batch",
+                             filename_col = "Filename",
+                             condition = "Set",
+                             down_sample = FALSE,
+                             sample_size = 500000,
+                             seed = 473,
+                             cofactor = 5) 
+#saveRDS(uncorrected, file = "Controles_uncorrected.RDS")
+
+# Run batch correction
+corrected_muestras <- uncorrected_muestras %>%
+  batch_correct(markers = markers,
+                norm_method = "scale", # "rank" is recommended when combining data with heavy batch effects
+                rlen = 10, # Consider a larger value, if results are not convincing (e.g. 100)
+                covar = "condition")
+#saveRDS(corrected, file = "Controles_corrected.RDS")
+
+write.csv(corrected_muestras, "Muestras_normalizadas.csv", row.names = FALSE)
+```
+
+#### Normalización junto:
+
+```{r}
+# Directory containing .fcs files
+excel_dir <- "Controles_muestras_no_gated"
+data_dir <- "Controles_muestras_gated"
+# Markers of interest
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8', 'CCR7', 'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG', 'CD28', 'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14', 'CD11b', 'TCRG/D', 'PDL1', 'CD4', 'CD24', 'CD95', 'CD25', 'CXCR3', 'CD27', 'CD1c', 'CD19', 'CD127', 'HLADR', 'CD38')
+# The list of markers can also be imported from a panel file (See the reference manual for an example)
+
+# Compile fcs files, down-sample, and preprocess
+uncorrected_todo <- prepare_data(data_dir = data_dir,
+                            markers = markers,
+                            metadata = file.path(excel_dir, "metadata_cycombine_muestras_controles.xlsx"), # Can also be .csv file or data.frame object
+                             sample_ids = NULL,
+                             batch_ids = "Batch",
+                             filename_col = "Filename",
+                             condition = "Set",
+                             down_sample = FALSE,
+                             sample_size = 1000000,
+                             seed = 473,
+                             cofactor = 1) 
+#saveRDS(uncorrected, file = "Controles_uncorrected.RDS")
+
+# Run batch correction
+corrected_todo_no_HLADR <- uncorrected_todo %>%
+  batch_correct(markers = markers,
+                norm_method = "scale", # "rank" is recommended when combining data with heavy batch effects
+                rlen = 10, # Consider a larger value, if results are not convincing (e.g. 100)
+                covar = "condition")
+#saveRDS(corrected, file = "Controles_corrected.RDS")
+```
+
+```{r}
+write.csv(corrected_todo_no_HLADR, "Controles_muestras_normalizados/Controles_muestras_normalizados.csv", row.names = FALSE)
+```
+
+Guardamos todo en CSVs para el clustering en Python:
+
+```{r}
+# Crear un directorio para guardar los archivos CSV
+output_dir <- "Controles_muestras_normalizados_no_concat"
+
+corrected_todo_no_HLADR_X <- corrected_todo_no_HLADR[, !names(corrected_todo_no_HLADR) %in% c("id", "label", "condition", "batch")]
+
+# Agrupar los datos corregidos por la columna 'sample' y guardar cada grupo en un archivo CSV separado
+corrected_todo_no_HLADR_X %>%
+  group_by(sample) %>%
+  group_walk(~ write.csv(.x, file.path(output_dir, paste0(.y$sample, ".csv")), row.names = FALSE))
+```
+
+### Evaluación
+
+```{r}
+# Re-run clustering on corrected data
+labels <- corrected_todo %>% 
+  create_som(markers = markers,
+             rlen = 10)
+uncorrected_todo$label <- corrected_todo$label <- labels
+
+# Evaluate EMD
+emd <- evaluate_emd(uncorrected_todo, corrected_todo, cell_col = "label")
+
+# Reduction
+emd$reduction
+
+# Violin plot
+emd$violin
+
+# Scatter plot
+emd$scatter
+```
+
+```{r}
+# Evaluate MAD
+mad <- evaluate_mad(uncorrected_todo, corrected_todo, cell_col = "label")
+
+# Score
+mad$score
+```

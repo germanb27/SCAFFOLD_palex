@@ -1,0 +1,239 @@
+---
+title: "FlowSOM"
+output: html_document
+date: "2024-11-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r cars}
+if (!requireNamespace("FlowSOM", quietly = TRUE)) {
+  install.packages("FlowSOM")
+}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("flowCore")
+
+# To ensure Rstudio looks up BioConductor packages run:
+setRepositories(ind = c(1:6, 8))
+# Then install package with
+devtools::install_github("biosurf/cyCombine")
+```
+
+```{r}
+library(FlowSOM)
+library(flowCore)
+library("cyCombine")
+library("magrittr")
+library(dplyr)
+```
+
+```{r}
+# Configurar el directorio de trabajo
+work_dir <- "C:/Users/Usuario/OneDrive/Escritorio/Palex/Muestras TFM/SAMPLES_SCAFOLD"
+input_dir <- file.path(work_dir, "CD45 CLEAN_GRANADA")
+# Crear un subdirectorio para almacenar los DataFrames
+output_dir <- file.path(work_dir, "clusters_flowsom")
+if (!dir.create(output_dir, showWarnings = FALSE)) {
+  cat("El subdirectorio ya existe o no se pudo crear.\n")
+}
+
+# Función para limpiar nombres de variables
+limpiar_nombre_variable <- function(nombre) {
+  nombre_limpio <- gsub("[^a-zA-Z0-9-]", "_", nombre)
+  return(nombre_limpio)
+}
+```
+
+### Usando el CSV de muestras normalizadas:
+
+```{r}
+# Leer el archivo CSV que contiene todos los controles y muestras
+
+input_csv<- file.path(work_dir, "Controles_muestras_normalizados/Controles_muestras_normalizados.csv")
+df <- read.csv(input_csv)
+```
+
+```{r}
+# O leer directamente el dataframe si esta en el entorno
+df <- corrected_todo_no_HLADR
+```
+
+### Sin unir todos los controles en un mismo archivo:
+
+```{r}
+# Directorio de salida
+output_dir <- "clusters_flowsom"
+
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8', 'CCR7', 'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG', 'CD28', 'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14', 'CD11b', 'TCRG/D', 'PDL1', 'CD4', 'CD24', 'CD95', 'CD25', 'CXCR3', 'CD27', 'CD1c', 'CD19', 'CD127', 'HLADR', 'CD38')
+
+
+# Número de eventos deseado
+num_eventos <- 120000
+
+
+
+# Procesar cada muestra por separado
+df_clusters_flowsom_todo <- df
+
+
+
+samples <- unique(df_clusters_flowsom_todo$sample)
+df_clusters_flowsom_todo_subsampled <- data.frame()
+
+for (sample_name in samples) {
+  df_sample <- subset(df_clusters_flowsom_todo, sample == sample_name)
+  
+  # Subsamplear los datos de la muestra para tener el mismo número de eventos
+  if (nrow(df_sample) > num_eventos) {
+    df_sample_subsampled <- rbind(df_clusters_flowsom_todo_subsampled, sample_n(df_sample, num_eventos))
+  } else {
+    df_sample_subsampled <- rbind(df_clusters_flowsom_todo_subsampled, df_sample)
+  }
+  
+  # Convertir los datos a una matriz utilizando solo las columnas de interés
+  data_matrix_sample <- as.matrix(df_sample_subsampled[, markers])
+  #data_matrix_sample <- as.matrix(df_sample[, markers])
+
+  
+  # Aplicar FlowSOM a los datos de la muestra
+  fsom_sample <- FlowSOM::FlowSOM(data_matrix_sample, xdim = 10, ydim = 10, nClus = 30, scale = FALSE)
+  
+  # Obtener los clusters asignados a cada punto de datos de la muestra
+  clusters_sample <- fsom_sample$metaclustering[fsom_sample$map$mapping[, 1]]
+  
+  # Añadir los clusters a los datos de la muestra
+  df_sample_subsampled$cluster <- clusters_sample
+  #df_sample$cluster <- clusters_sample
+  
+  # Guardar los datos de la muestra con los clusters en un archivo CSV
+  output_file_sample <- file.path(output_dir, paste0(sample_name, "_clusters.csv"))
+  write.csv(df_sample_subsampled, output_file_sample, row.names = FALSE)
+}
+```
+
+### **Clusterización de los controles conjuntamente:**
+
+```{r}
+# Directorio de salida
+output_dir <- "clusters_flowsom"
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8', 'CCR7', 
+             'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG', 'CD28', 
+             'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14', 'CD11b', 'TCRG/D', 
+             'PDL1', 'CD4', 'CD24', 'CD95', 'CD25', 'CXCR3', 'CD27', 'CD1c', 
+             'CD19', 'CD127', 'HLADR', 'CD38')
+
+# df_clusters_flowsom_todo contiene todas las muestras
+df_clusters_flowsom_todo <- df
+
+# Dividir muestras en controles (empiezan con "C") y casos (empiezan con "PRETR")
+samples <- unique(df_clusters_flowsom_todo$sample)
+controles <- samples[grepl("^C", samples)]
+casos <- samples[grepl("^PRETR", samples)]
+
+df_controles <- subset(df_clusters_flowsom_todo, sample %in% controles)
+
+data_matrix_controles <- as.matrix(df_controles[, markers])
+fsom_controles <- FlowSOM::FlowSOM(
+  data_matrix_controles,
+  xdim = 10, ydim = 10, nClus = 60, scale = FALSE
+)
+clusters_controles <- fsom_controles$metaclustering[fsom_controles$map$mapping[,1]]
+
+# Asignar clusters a df_controles (en este ejemplo, se dejan tal cual)
+df_controles$cluster <- clusters_controles
+
+# Guardar resultados para cada archivo de control
+for (sample_name in controles) {
+  df_sub <- subset(df_controles, sample == sample_name)
+  output_file_sample <- file.path(output_dir, paste0(sample_name, "_clusters.csv"))
+  write.csv(df_sub, output_file_sample, row.names = FALSE)
+}
+
+
+for (sample_name in casos) {
+  df_sample <- subset(df_clusters_flowsom_todo, sample == sample_name)
+  
+  # Aplicar FlowSOM a la muestra individual
+  data_matrix_sample <- as.matrix(df_sample[, markers])
+  fsom_sample <- FlowSOM::FlowSOM(
+    data_matrix_sample,
+    xdim = 10, ydim = 10, nClus = 30, scale = FALSE
+  )
+  
+  clusters_sample <- fsom_sample$metaclustering[fsom_sample$map$mapping[, 1]]
+  
+  df_sample$cluster <- clusters_sample
+  output_file_sample <- file.path(output_dir, paste0(sample_name, "_clusters.csv"))
+  write.csv(df_sample, output_file_sample, row.names = FALSE)
+}
+```
+
+### **Clusterización de todos los archivos a la vez:**
+
+```{r}
+# Directorio de salida
+output_dir <- "clusters_flowsom_unidos"
+
+markers <- c('CD45RA', 'CD16', 'CCR5', 'CD62L', 'CD11c', 'CD56', 'CD8',
+             'CCR7', 'CD123', 'CD161', 'IgD', 'CD3', 'CD20', 'IgM', 'IgG',
+             'CD28', 'CCR6', 'CXCR5', 'PD1', 'CD141', 'CD57', 'CD14',
+             'CD11b', 'TCRG/D', 'PDL1', 'CD4', 'CD24', 'CD95', 'CD25',
+             'CXCR3', 'CD27', 'CD1c', 'CD19', 'CD127', 'HLADR', 'CD38')
+
+# Número de eventos deseado por muestra
+num_eventos <- 120000
+
+# Crear un dataframe vacío para combinar todos los datos
+df_combined <- data.frame()
+
+# Obtener la lista de muestras únicas
+samples <- unique(df$sample)
+
+# Subsamplear cada muestra y combinar los datos
+for (sample_name in samples) {
+  df_sample <- subset(df, sample == sample_name)
+  
+  # Subsamplear los datos de la muestra
+  if (nrow(df_sample) > num_eventos) {
+    df_sample_subsampled <- sample_n(df_sample, num_eventos)
+  } else {
+    df_sample_subsampled <- df_sample
+  }
+  
+  # Asegurar que existe la columna 'sample'
+  if (!'sample' %in% colnames(df_sample_subsampled)) {
+    df_sample_subsampled$sample <- sample_name
+  }
+  
+  # Combinar los datos
+  df_combined <- rbind(df_combined, df_sample_subsampled)
+}
+
+# Convertir los datos combinados a matriz utilizando solo los marcadores de interés
+data_matrix_combined <- as.matrix(df_combined[, markers])
+
+# Aplicar FlowSOM a los datos combinados
+fsom_combined <- FlowSOM::FlowSOM(data_matrix_combined, xdim = 10, ydim = 10, nClus = 60, scale = FALSE, seed = 42)
+
+# Obtener los clusters asignados a cada punto de datos
+clusters_combined <- fsom_combined$metaclustering[fsom_combined$map$mapping[, 1]]
+
+# Añadir los clusters al dataframe combinado
+df_combined$cluster <- clusters_combined
+
+# Separar los datos por muestra y guardar cada uno en un archivo CSV
+for (sample_name in samples) {
+  df_sample_clustered <- subset(df_combined, sample == sample_name)
+  
+  # Guardar los datos de la muestra con los clusters
+  output_file_sample <- file.path(output_dir, paste0(sample_name, "_clusters.csv"))
+  write.csv(df_sample_clustered, output_file_sample, row.names = FALSE)
+}
+```
